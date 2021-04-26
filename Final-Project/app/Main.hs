@@ -1,7 +1,7 @@
 module Main where
 
 import Lib
-import Codec.Audio.Wave
+import Data.WAVE
 
 
 main :: IO ()

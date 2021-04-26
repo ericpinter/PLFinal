@@ -46,7 +46,7 @@ executable Final-Project-exe
   build-depends:
       Final-Project
     , base >=4.7 && <5
-    , wave
+    , WAVE
   default-language: Haskell2010
 
 test-suite Final-Project-test
