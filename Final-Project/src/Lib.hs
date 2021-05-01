@@ -3,13 +3,13 @@
 module Lib  
     ( someFunc
     ) where
-
+import Prelude hiding (sequence)
 import Data.WAVE
 import Data.List
 
 
 defaultHeader :: WAVEHeader 
-defaultHeader = WAVEHeader 2 48000 16 Nothing
+defaultHeader = WAVEHeader 2 48000 8 Nothing
 
 instance Num a => Num [[a]] where
     (+) = zipWith (zipWith (+))
@@ -34,9 +34,12 @@ sine sampleRate pitch n = round $ 200000000*sin(n*2*pi * pitch/sampleRate)
 samples :: (Float -> Float -> Float -> WAVESample) -> Float -> Float -> Float -> [[WAVESample]]
 samples f sampleRate pitch numSamples = [ [f sampleRate pitch n ] | n <- [0..numSamples]]
 
+sequence :: (Float -> Float -> Float -> WAVESample) -> Float -> [Float] -> Float -> [[WAVESample]]
+sequence f sampleRate pitches numSamples = foldl (\w p -> w ++ (samples f sampleRate p numSamples)) [[]] pitches
+
 
 w :: WAVE
-w = WAVE defaultHeader ((samples triangle 48000 440 100000))
+w = WAVE defaultHeader ((sequence sine 48000 [659.26, 587.33, 523.25, 587.33, 659.26, 659.26, 659.26, 587.33, 587.33, 587.33, 659.26, 783.99, 783.99] 12000))
 
 someFunc :: IO ()
 someFunc = putWAVEFile "wave.wav" w
