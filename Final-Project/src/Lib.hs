@@ -1,45 +1,94 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 module Lib  
-    ( someFunc
+    ( saveWave
+    , SoundSettings (SoundSettings)
+    , Sound
+    , Wave
+    , sine
+    , square
+    , triangle
+    , sawtooth
+    , sequence
+    , channels
+    , transposeTune
     ) where
 import Prelude hiding (sequence)
 import Data.WAVE
 import Data.List
-
-
-defaultHeader :: WAVEHeader 
-defaultHeader = WAVEHeader 2 48000 8 Nothing
+import Data.Int (Int32)
 
 instance Num a => Num [[a]] where
-    (+) = zipWith (zipWith (+))
-    (-) = zipWith (zipWith (-))
-    (*) = zipWith (zipWith (*))
+    (+) = zipWithLonger (zipWithLonger (+))
+    (-) = zipWithLonger (zipWithLonger (-))
+    (*) = zipWithLonger (zipWithLonger (*))
     negate = map (map negate)
     abs    = map (map abs) 
 
-sawtooth :: Float -> Float -> Float -> WAVESample
-sawtooth sampleRate pitch n = round $ - 2 * 200000000 / pi * atan ( 1 / tan (n / 2 * pi * pitch/sampleRate))
-
-triangle :: Float -> Float -> Float -> WAVESample
-triangle sampleRate pitch n = round $ - 2 * 200000000 / pi * asin ( sin (n / 2 * pi * pitch/sampleRate))
-
-square :: Float -> Float -> Float -> WAVESample
-square sampleRate pitch n = (*200000000) $ round $ sin(n*2*pi * pitch/sampleRate)
-
-sine :: Float -> Float -> Float -> WAVESample
-sine sampleRate pitch n = round $ 200000000*sin(n*2*pi * pitch/sampleRate)
+zipWithLonger :: (a -> a -> a) -> [a] -> [a] -> [a]
+zipWithLonger f = zipLonger f id id 
 
 
-samples :: (Float -> Float -> Float -> WAVESample) -> Float -> Float -> Float -> [[WAVESample]]
-samples f sampleRate pitch numSamples = [ [f sampleRate pitch n ] | n <- [0..numSamples]]
-
-sequence :: (Float -> Float -> Float -> WAVESample) -> Float -> [Float] -> Float -> [[WAVESample]]
-sequence f sampleRate pitches numSamples = foldl (\w p -> w ++ (samples f sampleRate p numSamples)) [[]] pitches
+channels :: [Wave] -> Wave
+channels = foldl (zipWithLonger (++)) []    
 
 
-w :: WAVE
-w = WAVE defaultHeader ((sequence sine 48000 [659.26, 587.33, 523.25, 587.33, 659.26, 659.26, 659.26, 587.33, 587.33, 587.33, 659.26, 783.99, 783.99] 12000))
+zipLonger :: (a -> b -> c) -> (a -> c) -> (b-> c) -> [a] -> [b] -> [c]
+zipLonger _ _ _ [] [] = []
+zipLonger _ _ h [] bs = map h bs
+zipLonger _ g _ as [] = map g as 
+zipLonger f g h (a:as) (b:bs) = f a b : zipLonger f g h as bs
 
-someFunc :: IO ()
-someFunc = putWAVEFile "wave.wav" w
+                        --contains sample rate, number of semitones in the tuning    
+data SoundSettings = SoundSettings Float Float --TODO add number of channels, things like that
+
+type Sound = (->) SoundSettings
+
+
+type WaveFunction = Float -> Float -> Float -> Sound WAVESample
+type Wave = [[WAVESample]]
+type Pitch = (Int,Int)
+type Duration = Rational
+type Note = (Pitch,Duration)
+type Tune = [Note]
+
+frequencyOf :: Pitch -> Sound Float
+frequencyOf (n, octave) (SoundSettings _ semitones) =  16.35 * (2 ** ((fromIntegral n)/semitones + fromIntegral octave)) -- 16.35 is the frequency of C0. 
+
+
+maxAmplitude = fromIntegral (maxBound :: Int32)
+
+
+sawtooth :: WaveFunction
+sawtooth freq amp n (SoundSettings sampleRate _) = round $ - 2 * (maxAmplitude * (2**amp) / pi) * atan ( 1 / tan (n / 2 * pi * freq/sampleRate))
+
+triangle :: WaveFunction
+triangle freq amp n (SoundSettings sampleRate _) = round $ - 2 * (maxAmplitude * (2**amp) / pi) * asin ( sin (n / 2 * pi * freq/sampleRate))
+
+square :: WaveFunction
+square freq amp n (SoundSettings sampleRate _) = round $ (\a -> a * maxAmplitude * (2**amp)) $ signum $ sin(n*2*pi * freq/sampleRate)
+
+sine :: WaveFunction
+sine freq amp n (SoundSettings sampleRate _) = round $ (maxAmplitude * (2**amp)) * sin(n*2*pi * freq/sampleRate)
+
+
+samples' :: Float -> WaveFunction -> Float -> Duration -> Sound Wave
+samples' amp f freq beats ss@(SoundSettings sampleRate _) = [ [f freq amp n ss] | n <- [0.. sampleRate * fromRational beats]]
+
+samples :: WaveFunction -> Float -> Duration -> Sound Wave
+samples = samples' (-2)
+
+sequence :: WaveFunction -> Tune -> Sound Wave
+sequence f notes = do 
+    notes' <- mapM (\(pitch,duration) -> do --lookup pitches based on the sound settings
+        freq <- frequencyOf pitch
+        return (freq, duration)) notes 
+    \ss -> foldl (\w (freq,duration) -> w ++ (samples f freq duration ss)) [[]] notes' 
+
+
+transposeTune :: Int -> Tune -> Tune
+transposeTune semitones = map (\((a,b),d) -> ((a+semitones,b),d))
+
+
+saveWave :: Wave -> Sound (IO ())
+saveWave w (SoundSettings sampleRate _) = putWAVEFile "wave.wav" $ WAVE (WAVEHeader 2 (round sampleRate) 8 Nothing) $ w
