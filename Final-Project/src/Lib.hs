@@ -15,7 +15,7 @@ zipWithLonger f = zipLonger f id id
 -- The channels function combines waves into different channels in a single wave.
 -- This can be used to assign what plays through the left and right speakers. 
 
--- Note that you should be careful how many channels you use, as this should be the first number you give SoundSettings.
+-- Pay attention to how many channels you use, as this should be the first number you give SoundSettings.
 -- Be careful about using channels mutiple times, since it can lead to the channels being split up in unexpected ways.
 channels :: [Wave] -> Wave
 channels = foldl (zipWithLonger (++)) []    
@@ -40,7 +40,12 @@ type Sound = (->) SoundSettings
 -- A Wave Function takes the frequency, amplitude, and phase and returns the sample of that wave at that particular phase.
 type WaveFunction = Float -> Float -> Float -> Sound WAVESample
 type Wave = [[WAVESample]]
-type Pitch = (Int,Int)
+type Pitch = (Int,Int) -- First number is which semitone in the octave the note is, second number is which octave to use.
+
+-- Kind of a hack, but for our purposes a rest is just something with a really really low frequency.
+rest :: Pitch
+rest = (0,-100)
+
 type Duration = Rational
 type Note = (Pitch,Duration)
 type Tune = [Note]
@@ -54,18 +59,18 @@ frequencyOf (n, octave) (SoundSettings _ _ semitones _ _) =  16.35 * (2 ** ((fro
 maxAmplitude :: Float
 maxAmplitude = fromIntegral (maxBound :: Int32)
 
--- There are four types of waves that are pretty simple to make using trigonometry
+-- There are four types of waves that are pretty simple to make using trigonometry. Thanks for the formulae Wikipedia!
 sawtooth :: WaveFunction
-sawtooth freq amp n (SoundSettings _ sampleRate _ _ _) = round $ - 2 * (maxAmplitude * (2**amp) / pi) * atan ( 1 / tan (n / 2 * pi * freq/sampleRate))
+sawtooth freq amp n (SoundSettings _ sampleRate _ _ _) = round $ - 2 * (maxAmplitude * (2**amp) / pi) * atan ( 1 / tan (n * pi * freq/sampleRate))
 
 triangle :: WaveFunction
-triangle freq amp n (SoundSettings _ sampleRate _ _ _) = round $ - 2 * (maxAmplitude * (2**amp) / pi) * asin ( sin (n / 2 * pi * freq/sampleRate))
+triangle freq amp n (SoundSettings _ sampleRate _ _ _) = round $ - 2 * (maxAmplitude * (2**amp) / pi) * asin ( sin (n * 2 * pi * freq/sampleRate))
 
 square :: WaveFunction
-square freq amp n (SoundSettings _ sampleRate _ _ _) = round $ (\a -> a * maxAmplitude * (2**amp)) $ signum $ sin(n*2*pi * freq/sampleRate)
+square freq amp n (SoundSettings _ sampleRate _ _ _) = round $ (\a -> a * maxAmplitude * (2**amp)) $ signum $ sin(n * 2 * pi * freq/sampleRate)
 
 sine :: WaveFunction
-sine freq amp n (SoundSettings _ sampleRate _ _ _) = round $ (maxAmplitude * (2**amp)) * sin(n*2*pi * freq/sampleRate)
+sine freq amp n (SoundSettings _ sampleRate _ _ _) = round $ (maxAmplitude * (2**amp)) * sin(n * 2 * pi * freq/sampleRate)
 
 -- samples' takes an amplitude, type of wave, a frequency, and a duration and generates a wave with those properties
 samples' :: Float -> WaveFunction -> Float -> Duration -> Sound Wave
